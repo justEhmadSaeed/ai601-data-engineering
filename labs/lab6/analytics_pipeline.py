@@ -1,43 +1,86 @@
+from prefect import task, flow, get_run_logger
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
 
-def main():
-    # Step 1: Fetch Data
-    print("Reading data...")
+
+@task
+def fetch_data(file_path):
+    logger = get_run_logger()
+    logger.info(f"Reading data from {file_path}")
     # Assume a dataset with sales figures and other fields is provided.
-    df = pd.read_csv("data/analytics_data.csv")
-    print(f"Data shape: {df.shape}")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    df = pd.read_csv(file_path)
 
-    # Step 2: Validate Data
-    print("Validating data...")
+    return df
+
+
+@task
+def validate_data(df):
+    logger = get_run_logger()
+    logger.info("Validating data...")
     missing_values = df.isnull().sum()
-    print("Missing values:\n", missing_values)
+    logger.info("Missing values:\n", missing_values)
     # For simplicity, drop any rows with missing values
     df_clean = df.dropna()
 
-    # Step 3: Transform Data
-    print("Transforming data...")
+    return df_clean
+
+
+@task
+def transform_data(df):
+    logger = get_run_logger()
+    logger.info("Transforming data...")
     # For example, if there is a "sales" column, create a normalized version.
-    if "sales" in df_clean.columns:
-        df_clean["sales_normalized"] = (df_clean["sales"] - df_clean["sales"].mean()) / df_clean["sales"].std()
+    if "sales" in df.columns:
+        df["sales_normalized"] = (
+            df["sales"] - df["sales"].mean()) / df["sales"].std()
 
-    # Step 4: Generate Analytics Report
-    print("Generating analytics report...")
-    summary = df_clean.describe()
-    summary.to_csv("data/analytics_summary.csv")
-    print("Summary statistics saved to data/analytics_summary.csv")
+    return df
 
-    # Step 5: Create a Histogram for Sales Distribution
-    if "sales" in df_clean.columns:
-        plt.hist(df_clean["sales"], bins=20)
+
+@task
+def generate_analytics_report(df, output_file):
+    logger = get_run_logger()
+    logger.info("Generating analytics report...")
+    summary = df.describe()
+    summary.to_csv(output_file)
+    logger.info(f"Summary statistics saved to {output_file}")
+
+
+@task
+def create_histogram(df):
+    logger = get_run_logger()
+    if "sales" in df.columns:
+        plt.hist(df["sales"], bins=20)
         plt.title("Sales Distribution")
         plt.xlabel("Sales")
         plt.ylabel("Frequency")
-        plt.savefig("data/sales_histogram.png")
+        plt.savefig("sales_histogram.png")
         plt.close()
-        print("Sales histogram saved to data/sales_histogram.png")
+        logger.info("Sales histogram saved to sales_histogram.png")
 
-    print("Analytics pipeline completed.")
+
+@flow(name="analytics_pipeline")
+def analytics_pipeline():
+    # Step 1: Fetch Data
+    df = fetch_data("analytics_data.csv")
+
+    # Step 2: Validate Data
+    df_clean = validate_data(df)
+
+    # Step 3: Transform Data
+    df_clean = transform_data(df_clean)
+
+    # Step 4: Generate Analytics Report
+    generate_analytics_report(df_clean, "analytics_summary.csv")
+
+    # Step 5: Create a Histogram for Sales Distribution
+    create_histogram(df_clean)
+    logger = get_run_logger()
+    logger.info("Analytics pipeline completed.")
+
 
 if __name__ == "__main__":
-    main()
+    analytics_pipeline()
